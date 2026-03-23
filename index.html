@@ -25,7 +25,7 @@
         /* 避免在手機版上點擊時出現不必要的藍色高光 */
         * { -webkit-tap-highlight-color: transparent; }
 
-        /* 修正 iOS/Safari 的 3D 翻轉穿透問題 (重點修復) */
+        /* 修正 iOS/Safari 的 3D 翻轉穿透問題 */
         .preserve-3d {
             transform-style: preserve-3d;
             -webkit-transform-style: preserve-3d;
@@ -33,7 +33,6 @@
         .backface-hidden {
             backface-visibility: hidden;
             -webkit-backface-visibility: hidden;
-            /* 強制啟用硬體加速，解決圖層穿透 Bug */
             transform: translateZ(0);
             -webkit-transform: translateZ(0);
         }
@@ -78,8 +77,8 @@
             details: "configuration (n) 配置、設定\nKK 音標：[kənˌfɪɡjəˈreɪʃən]、中文：近似「康-非-格-瑞-旋」\n[詞性變化] configure (v) 配置\n[搭配詞] hardware configuration 硬體配置、system configuration 系統設定\n[例句] Check the hardware configuration before starting the machine.\n啟動機器前請檢查硬體配置。"
           },
           {
-            word: "threading",
-            details: "threading (n) 螺紋加工\nKK 音標：[ˋθrɛdɪŋ]、中文：近似「思-瑞-滴-恩」\n[詞性變化] thread (n/v) 螺紋\n[搭配詞] electronic threading 電子螺紋、threading cycle 螺紋循環\n[例句] G33 is used for electronic threading on a lathe.\nG33 用於車床上的電子螺紋加工。"
+            word: "software",
+            details: "software (n) 軟體\nKK 音標：[ˋsɔftwɛr]、中文：近似「索夫-特-威爾」\n[詞性變化] 無\n[搭配詞] software option 軟體選項、software update 軟體更新\n[例句] You need to install the latest software version.\n你需要安裝最新的軟體版本"
           }
         ];
 
@@ -102,6 +101,16 @@
           const fileInputRef = useRef(null);
 
           const progressPercent = totalCards.length > 0 ? ((totalCards.length - queue.length) / totalCards.length) * 100 : 0;
+
+          // 預載語音清單
+          useEffect(() => {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.getVoices();
+                window.speechSynthesis.onvoiceschanged = () => {
+                    window.speechSynthesis.getVoices();
+                };
+            }
+          }, []);
 
           useEffect(() => {
             localStorage.setItem('anki-totalCards', JSON.stringify(totalCards));
@@ -128,13 +137,35 @@
             return () => window.removeEventListener('keydown', handleKeyDown);
           }, [isFlipped, isInfoOpen, queue.length]);
 
+          // --- 智慧尋找最佳的美式英文發音引擎 ---
+          const getBestAmericanVoice = () => {
+              const voices = window.speechSynthesis.getVoices();
+              const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Zira', 'Microsoft David', 'Fred'];
+              let selectedVoice = null;
+              
+              for (let name of preferredNames) {
+                  selectedVoice = voices.find(v => v.name.includes(name));
+                  if (selectedVoice) break;
+              }
+              if (!selectedVoice) {
+                  selectedVoice = voices.find(v => v.lang === 'en-US');
+              }
+              return selectedVoice;
+          };
+
           const speakWord = (word, e) => {
             if (e && e.stopPropagation) e.stopPropagation();
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
               const utterance = new SpeechSynthesisUtterance(word);
               utterance.lang = 'en-US';
-              utterance.rate = 0.85;
+              utterance.rate = 0.9; 
+              
+              const bestVoice = getBestAmericanVoice();
+              if (bestVoice) {
+                  utterance.voice = bestVoice;
+              }
+              
               window.speechSynthesis.speak(utterance);
             } else {
               alert("您的瀏覽器不支援語音朗讀功能");
@@ -148,7 +179,13 @@
               const englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
               const utterance = new SpeechSynthesisUtterance(englishText);
               utterance.lang = 'en-US';
-              utterance.rate = 0.85;
+              utterance.rate = 0.9; 
+              
+              const bestVoice = getBestAmericanVoice();
+              if (bestVoice) {
+                  utterance.voice = bestVoice;
+              }
+              
               window.speechSynthesis.speak(utterance);
             }
           };
@@ -242,7 +279,10 @@
                     contentStyle = "text-slate-700 font-medium"; 
                 }
 
-                const isPlayable = tag === '搭配詞' || tag === '例句';
+                // 檢查是否含有英文字母，避免「無」這個字也跑出發音按鈕
+                const hasEnglishText = /[a-zA-Z]/.test(content);
+                // 允許詞性變化、搭配詞、例句 發音
+                const isPlayable = (tag === '詞性變化' || tag === '搭配詞' || tag === '例句') && hasEnglishText;
 
                 return (
                   <div key={index} className="mt-3 mb-1 flex items-start w-full">
@@ -421,7 +461,7 @@
                 <div className="relative w-full max-w-md mx-auto aspect-[3/4] sm:aspect-[4/5] cursor-pointer group preserve-3d" onClick={() => !isFlipped && setIsFlipped(true)}>
                   <div className="w-full h-full relative preserve-3d" style={{ transition: 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)', transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
                     
-                    {/* 正面 (加入 backface-hidden 以修正穿透問題) */}
+                    {/* 正面 */}
                     <div className="absolute w-full h-full bg-white rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.06)] border border-slate-200 flex flex-col items-center justify-center p-6 text-center backface-hidden" style={{ transform: 'rotateY(0deg)' }}>
                       <div className="absolute top-6 flex flex-col items-center text-slate-400">
                         <div className="text-xs font-bold tracking-widest uppercase flex items-center space-x-1.5 mb-1">
@@ -442,14 +482,13 @@
                         </div>
                       )}
 
-                      {/* 移除了原本的 z-10 避免 Safari 3D 破圖 */}
                       <button onClick={(e) => speakWord(currentCard.word, e)} className="absolute bottom-8 flex items-center space-x-2 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 px-5 py-2.5 rounded-full transition-all active:scale-95">
                         <Volume2 className="w-5 h-5" />
                         <span className="font-bold">發音</span>
                       </button>
                     </div>
 
-                    {/* 背面 (加入 backface-hidden 以修正穿透問題) */}
+                    {/* 背面 */}
                     <div className="absolute w-full h-full bg-white rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.06)] border border-slate-200 p-5 sm:p-6 flex flex-col overflow-hidden backface-hidden" style={{ transform: 'rotateY(180deg)' }}>
                       {showImage && (
                         <img 
