@@ -176,7 +176,12 @@
             if (e && e.stopPropagation) e.stopPropagation();
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
-              const englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
+              
+              // 過濾中文字及中文全形標點符號
+              let englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ');
+              // 自動過濾詞性標記，例如 (v), (n), (adj), ( V ) 等，避免語音朗讀括號與字母
+              englishText = englishText.replace(/\(\s*[a-zA-Z/]{1,5}\s*\)/g, ' ').trim();
+              
               const utterance = new SpeechSynthesisUtterance(englishText);
               utterance.lang = 'en-US';
               utterance.rate = 0.9; 
