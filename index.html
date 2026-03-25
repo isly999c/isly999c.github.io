@@ -92,12 +92,15 @@
           const [stats, setStats] = useState(() => {
             try { const saved = localStorage.getItem('anki-stats'); return saved ? JSON.parse(saved) : { again: 0, hard: 0, good: 0, easy: 0 }; } catch { return { again: 0, hard: 0, good: 0, easy: 0 }; }
           });
-          
-          const [isFlipped, setIsFlipped] = useState(false);
-          const [isInfoOpen, setIsInfoOpen] = useState(false);
+          const [settings, setSettings] = useState(() => {
+            try { const saved = localStorage.getItem('anki-settings'); return saved ? JSON.parse(saved) : { again: '1', hard: 'middle', good: 'end' }; } catch { return { again: '1', hard: 'middle', good: 'end' }; }
+          });
           const [showImage, setShowImage] = useState(() => {
             try { const saved = localStorage.getItem('anki-showImage'); return saved !== null ? JSON.parse(saved) : true; } catch { return true; }
           });
+
+          const [isFlipped, setIsFlipped] = useState(false);
+          const [isInfoOpen, setIsInfoOpen] = useState(false);
           const fileInputRef = useRef(null);
 
           const progressPercent = totalCards.length > 0 ? ((totalCards.length - queue.length) / totalCards.length) * 100 : 0;
@@ -112,12 +115,14 @@
             }
           }, []);
 
+          // 同步存檔
           useEffect(() => {
             localStorage.setItem('anki-totalCards', JSON.stringify(totalCards));
             localStorage.setItem('anki-queue', JSON.stringify(queue));
             localStorage.setItem('anki-stats', JSON.stringify(stats));
+            localStorage.setItem('anki-settings', JSON.stringify(settings));
             localStorage.setItem('anki-showImage', JSON.stringify(showImage));
-          }, [totalCards, queue, stats, showImage]);
+          }, [totalCards, queue, stats, settings, showImage]);
 
           useEffect(() => {
             const handleKeyDown = (e) => {
@@ -137,7 +142,6 @@
             return () => window.removeEventListener('keydown', handleKeyDown);
           }, [isFlipped, isInfoOpen, queue.length]);
 
-          // --- 智慧尋找最佳的美式英文發音引擎 ---
           const getBestAmericanVoice = () => {
               const voices = window.speechSynthesis.getVoices();
               const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Zira', 'Microsoft David', 'Fred'];
@@ -176,12 +180,7 @@
             if (e && e.stopPropagation) e.stopPropagation();
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
-              
-              // 過濾中文字及中文全形標點符號
-              let englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ');
-              // 自動過濾詞性標記，例如 (v), (n), (adj), ( V ) 等，避免語音朗讀括號與字母
-              englishText = englishText.replace(/\(\s*[a-zA-Z/]{1,5}\s*\)/g, ' ').trim();
-              
+              const englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
               const utterance = new SpeechSynthesisUtterance(englishText);
               utterance.lang = 'en-US';
               utterance.rate = 0.9; 
@@ -250,6 +249,7 @@
             return result;
           };
 
+          // 動態依照使用者設定來計算插入位置
           const handleRating = (rating, e) => {
             if (e && e.stopPropagation) e.stopPropagation();
             
@@ -258,9 +258,20 @@
             const currentCard = queue[0];
             const remainingCards = queue.slice(1);
             
-            if (rating === 'again') remainingCards.splice(1, 0, currentCard);
-            else if (rating === 'hard') remainingCards.splice(Math.ceil(remainingCards.length / 2), 0, currentCard);
-            else if (rating === 'good') remainingCards.push(currentCard);
+            if (rating !== 'easy') {
+                const settingVal = settings[rating];
+                let insertIndex = 0;
+                
+                if (settingVal === 'middle') {
+                    insertIndex = Math.ceil(remainingCards.length / 2);
+                } else if (settingVal === 'end') {
+                    insertIndex = remainingCards.length;
+                } else {
+                    insertIndex = Math.min(Number(settingVal), remainingCards.length);
+                }
+                
+                remainingCards.splice(insertIndex, 0, currentCard);
+            }
             
             setQueue(remainingCards);
             setIsFlipped(false);
@@ -284,9 +295,7 @@
                     contentStyle = "text-slate-700 font-medium"; 
                 }
 
-                // 檢查是否含有英文字母，避免「無」這個字也跑出發音按鈕
                 const hasEnglishText = /[a-zA-Z]/.test(content);
-                // 允許詞性變化、搭配詞、例句 發音
                 const isPlayable = (tag === '詞性變化' || tag === '搭配詞' || tag === '例句') && hasEnglishText;
 
                 return (
@@ -348,40 +357,88 @@
           };
 
           const InfoModal = () => (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsInfoOpen(false)}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 relative" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto" onClick={() => setIsInfoOpen(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative my-8" onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => setIsInfoOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-1 transition-colors">
                   <X className="w-5 h-5" />
                 </button>
                 <h3 className="text-xl font-black text-slate-800 mb-4 flex items-center">
-                  <Info className="w-6 h-6 mr-2 text-indigo-500" /> 操作說明
+                  <Info className="w-6 h-6 mr-2 text-indigo-500" /> 操作設定與說明
                 </h3>
+                
                 <div className="space-y-4 text-sm text-slate-600">
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <p className="font-bold text-slate-800 mb-2 border-b pb-1">滑鼠操作：</p>
-                    <ul className="list-disc pl-4 space-y-1">
-                      <li>點擊卡片正面空白處即可翻面顯示解析與圖片。</li>
-                      <li>點擊喇叭圖示 <Volume2 className="inline w-4 h-4 text-indigo-500 mx-0.5" /> 可以聆聽對應句子的英文發音。</li>
-                      <li>點擊下方按鈕進行難易度評分。</li>
-                    </ul>
+                  
+                  {/* --- 複習間隔設定區塊 --- */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <p className="font-bold text-slate-800 mb-3 border-b border-slate-200 pb-1.5 flex items-center">
+                      ⚙️ 複習間隔設定 (插入位置)
+                    </p>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-red-600">Again (重來):</span>
+                        <select 
+                          value={settings.again} 
+                          onChange={(e) => setSettings({...settings, again: e.target.value})}
+                          className="bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 text-xs sm:text-sm font-medium shadow-sm cursor-pointer"
+                        >
+                          <option value="1">1 張後 (馬上複習)</option>
+                          <option value="2">2 張後</option>
+                          <option value="3">3 張後</option>
+                          <option value="5">5 張後</option>
+                          <option value="middle">正中間</option>
+                          <option value="end">移至最後</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-orange-600">Hard (困難):</span>
+                        <select 
+                          value={settings.hard} 
+                          onChange={(e) => setSettings({...settings, hard: e.target.value})}
+                          className="bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 text-xs sm:text-sm font-medium shadow-sm cursor-pointer"
+                        >
+                          <option value="1">1 張後</option>
+                          <option value="3">3 張後</option>
+                          <option value="5">5 張後</option>
+                          <option value="10">10 張後</option>
+                          <option value="middle">正中間</option>
+                          <option value="end">移至最後</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-blue-600">Good (記得):</span>
+                        <select 
+                          value={settings.good} 
+                          onChange={(e) => setSettings({...settings, good: e.target.value})}
+                          className="bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 outline-none focus:border-indigo-500 text-xs sm:text-sm font-medium shadow-sm cursor-pointer"
+                        >
+                          <option value="middle">正中間</option>
+                          <option value="5">5 張後</option>
+                          <option value="10">10 張後</option>
+                          <option value="20">20 張後</option>
+                          <option value="end">移至最後</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-emerald-600">Easy (簡單):</span>
+                        <span className="text-slate-500 text-xs font-medium bg-slate-100 px-2 py-1 rounded">直接移除不復習</span>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                    <p className="font-bold text-indigo-800 mb-2 border-b border-indigo-200 pb-1">鍵盤快捷鍵 (提升效率)：</p>
+                    <p className="font-bold text-indigo-800 mb-2 border-b border-indigo-200 pb-1">滑鼠操作與快捷鍵：</p>
                     <ul className="space-y-2">
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 font-bold text-indigo-600">Space</kbd> 翻開卡片背面</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-red-600">1</kbd> 評分：Again</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-orange-600">2</kbd> 評分：Hard</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-blue-600">3</kbd> 評分：Good</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-emerald-600">4</kbd> 評分：Easy</li>
+                      <li className="flex items-center text-xs text-indigo-700 mt-2">
+                        <Volume2 className="inline w-4 h-4 mr-1" /> 點擊喇叭圖示可聆聽英文發音
+                      </li>
                     </ul>
                   </div>
-                  <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mt-4">
-                    <p className="font-bold text-orange-800 mb-2 border-b border-orange-200 pb-1">進階圖片設定：</p>
-                    <p className="text-orange-700 leading-relaxed">
-                      若自動找的圖片不準確，您可以點擊上方的「圖片開關」將其關閉。<br/>
-                      <b>自訂圖片：</b>想顯示自己的圖片，請在 CSV 加上「第三個欄位」，填入圖片的網址 (URL)，系統會優先顯示您的自訂圖片！
-                    </p>
-                  </div>
+                  
                 </div>
                 <button onClick={() => setIsInfoOpen(false)} className="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-colors">
                   開始學習
@@ -449,9 +506,9 @@
                       <ImageIcon className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:block">{showImage ? '圖片開' : '圖片關'}</span>
                     </button>
-                    <button onClick={() => setIsInfoOpen(true)} className="flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors text-xs sm:text-sm font-semibold shadow-sm" title="操作說明">
+                    <button onClick={() => setIsInfoOpen(true)} className="flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors text-xs sm:text-sm font-semibold shadow-sm" title="操作設定與說明">
                       <Info className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:block">說明</span>
+                      <span className="hidden sm:block">設定</span>
                     </button>
                     <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                     <button onClick={() => fileInputRef.current.click()} className="flex items-center space-x-1 sm:space-x-1.5 bg-slate-800 hover:bg-slate-900 text-white p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors text-xs sm:text-sm font-semibold shadow-sm">
