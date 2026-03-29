@@ -185,7 +185,7 @@
             return () => clearInterval(interval);
           }, []);
 
-          // 🖼️ 動態圖片抓取邏輯
+          // 🖼️ 動態圖片抓取邏輯 (修復手機版連線超時與圖庫來源)
           useEffect(() => {
             if (queue.length > 0 && showImage) {
                 const word = queue[0].word;
@@ -204,14 +204,17 @@
                         if (data.results && data.results.length > 0) {
                             setCurrentImageUrl(data.results[0].urls.small);
                         } else {
-                            setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering`);
+                            // 找不到圖時，改用更快速穩定的 picsum
+                            setCurrentImageUrl(`https://picsum.photos/seed/${encodeURIComponent(word)}/400/200`);
                         }
                     })
                     .catch((err) => {
-                        setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering`);
+                        // API 錯誤時，改用更快速穩定的 picsum
+                        setCurrentImageUrl(`https://picsum.photos/seed/${encodeURIComponent(word)}/400/200`);
                     });
                 } else {
-                    setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering/all`);
+                    // 預設後備圖庫改為 picsum
+                    setCurrentImageUrl(`https://picsum.photos/seed/${encodeURIComponent(word)}/400/200`);
                 }
             }
           }, [queue[0]?.word, showImage, settings.unsplashKey]);
@@ -734,7 +737,7 @@
                     {/* 背面 */}
                     <div className="absolute w-full h-full bg-white dark:bg-slate-800 rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgb(0,0,0,0.3)] border border-slate-200 dark:border-slate-700 p-5 sm:p-6 flex flex-col overflow-hidden backface-hidden" style={{ transform: 'rotateY(180deg)' }}>
                       
-                      {/* 🖼️ 精美圖片渲染與錯誤處理機制 */}
+                      {/* 🖼️ 精美圖片渲染與錯誤處理機制 (加入 translateZ 修復手機 3D 破圖) */}
                       {showImage && (
                           currentImageUrl && !imageError ? (
                               <img 
@@ -743,9 +746,10 @@
                                 alt={currentCard.word} 
                                 onError={() => setImageError(true)} 
                                 className="w-full h-28 sm:h-32 object-cover rounded-2xl shrink-0 mb-4 bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600" 
+                                style={{ transform: 'translateZ(1px)', WebkitTransform: 'translateZ(1px)' }}
                               />
                           ) : (
-                              <div className="w-full h-28 sm:h-32 flex flex-col items-center justify-center rounded-2xl shrink-0 mb-4 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500">
+                              <div className="w-full h-28 sm:h-32 flex flex-col items-center justify-center rounded-2xl shrink-0 mb-4 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500" style={{ transform: 'translateZ(1px)', WebkitTransform: 'translateZ(1px)' }}>
                                   <ImageIcon className={`w-6 h-6 mb-1 ${imageError ? 'opacity-30' : 'animate-pulse opacity-50'}`} />
                                   <span className="text-xs font-medium">{imageError ? '無法載入圖片' : '尋找配圖中...'}</span>
                               </div>
