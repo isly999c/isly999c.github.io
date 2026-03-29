@@ -27,7 +27,7 @@
         
         * { -webkit-tap-highlight-color: transparent; }
 
-        /* 👑 專治 iOS/Safari 3D 圖片消失的終極修正 */
+        /* 修正 iOS/Safari 的 3D 翻轉穿透問題 */
         .preserve-3d {
             transform-style: preserve-3d;
             -webkit-transform-style: preserve-3d;
@@ -134,8 +134,8 @@
                     if (parsed.good && !parsed.good.startsWith('c_') && !parsed.good.startsWith('t_')) parsed.good = 'c_' + parsed.good;
                     return parsed;
                 }
-                return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '' }; 
-            } catch { return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '' }; } 
+                return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '', voiceURI: '' }; 
+            } catch { return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '', voiceURI: '' }; } 
           });
           
           const [isFlipped, setIsFlipped] = useState(false);
@@ -145,6 +145,9 @@
           const [isDarkMode, setIsDarkMode] = useState(() => { try { const saved = localStorage.getItem('anki-darkMode'); return saved !== null ? JSON.parse(saved) : false; } catch { return false; } });
           const [isBlindMode, setIsBlindMode] = useState(() => { try { const saved = localStorage.getItem('anki-blindMode'); return saved !== null ? JSON.parse(saved) : false; } catch { return false; } });
           const [streak, setStreak] = useState(() => { try { return Number(localStorage.getItem('anki-streak') || 0); } catch { return 0; } });
+
+          // 🗣️ 語音庫狀態
+          const [availableVoices, setAvailableVoices] = useState([]);
 
           // 🖼️ 圖片狀態
           const [currentImageUrl, setCurrentImageUrl] = useState(null);
@@ -229,11 +232,18 @@
             }
           }, [queue[0]?.word, showImage, settings.unsplashKey]);
 
-          // 語音載入
+          // 🗣️ 語音載入與過濾 (讀取 iOS/電腦上的所有英文語音)
           useEffect(() => {
+            const loadVoices = () => {
+                const voices = window.speechSynthesis.getVoices();
+                // 過濾出英文發音，避免選單太長
+                const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+                setAvailableVoices(englishVoices);
+            };
+            
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.getVoices();
-                window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+                loadVoices();
+                window.speechSynthesis.onvoiceschanged = loadVoices;
             }
           }, []);
 
@@ -270,15 +280,23 @@
             setIsFlipped(false);
           };
 
-          // 語音功能
-          const getBestAmericanVoice = () => {
+          // 🗣️ 選擇性語音功能
+          const getSelectedVoice = () => {
               const voices = window.speechSynthesis.getVoices();
+              
+              // 如果使用者有設定指定聲音，優先使用
+              if (settings.voiceURI) {
+                  const selected = voices.find(v => v.voiceURI === settings.voiceURI);
+                  if (selected) return selected;
+              }
+              
+              // 否則自動尋找最佳美式發音 (後備機制)
               const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Zira', 'Microsoft David', 'Fred'];
               for (let name of preferredNames) {
                   let v = voices.find(v => v.name.includes(name));
                   if (v) return v;
               }
-              return voices.find(v => v.lang === 'en-US');
+              return voices.find(v => v.lang === 'en-US') || voices[0];
           };
 
           const speakText = (text, e) => {
@@ -288,10 +306,16 @@
               let englishText = text.replace(/\([a-zA-Z/]+\)/g, ' ');
               englishText = englishText.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
               const utterance = new SpeechSynthesisUtterance(englishText);
-              utterance.lang = 'en-US';
+              
+              const bestVoice = getSelectedVoice();
+              if (bestVoice) {
+                  utterance.voice = bestVoice;
+                  utterance.lang = bestVoice.lang;
+              } else {
+                  utterance.lang = 'en-US';
+              }
               utterance.rate = 0.9; 
-              const bestVoice = getBestAmericanVoice();
-              if (bestVoice) utterance.voice = bestVoice;
+              
               window.speechSynthesis.speak(utterance);
             }
           };
@@ -603,6 +627,29 @@
                     
                     <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300">
 
+                      {/* 🗣️ 語音發音設定區塊 */}
+                      <div className="bg-purple-50 dark:bg-purple-900/20 p-3.5 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                        <p className="font-bold text-purple-800 dark:text-purple-400 mb-2 border-b border-purple-200 dark:border-purple-800 pb-1.5 flex items-center">
+                          🗣️ 語音發音設定 (選擇聲音)
+                        </p>
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-purple-600 dark:text-purple-400 text-xs sm:text-sm">發音選擇：</span>
+                          <select 
+                            value={settings.voiceURI || ''} 
+                            onChange={(e) => setSettings({...settings, voiceURI: e.target.value})}
+                            className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-500 rounded px-2 py-1 outline-none focus:border-indigo-500 text-xs sm:text-sm shadow-sm max-w-[160px] truncate"
+                          >
+                            <option value="">自動推薦 (美式)</option>
+                            {availableVoices.map(v => (
+                              <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                            ))}
+                          </select>
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-purple-700 dark:text-purple-300 mt-2">
+                          ※ iPhone 推薦選擇 <b>Samantha</b> 或 <b>Alex</b>。
+                        </p>
+                      </div>
+
                       {/* 複習間隔設定區塊 */}
                       <div className="bg-slate-50 dark:bg-slate-700/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-600">
                         <p className="font-bold text-slate-800 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-600 pb-1.5 flex items-center">
@@ -636,7 +683,7 @@
                           🖼️ 高畫質圖庫 (Unsplash)
                         </p>
                         <p className="text-xs mb-2 text-blue-700 dark:text-blue-300">
-                          自動抓取高質感科技配圖，請填寫免費的 <a href="https://unsplash.com/developers" target="_blank" className="underline font-bold">Unsplash Access Key</a>：
+                          自動抓取高質感配圖，請填寫免費的 <a href="https://unsplash.com/developers" target="_blank" className="underline font-bold">Unsplash Access Key</a>：
                         </p>
                         <input 
                           type="text" 
