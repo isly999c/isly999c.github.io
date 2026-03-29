@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
-        darkMode: 'class', // 啟用 class-based 深色模式
+        darkMode: 'class', 
       }
     </script>
     
@@ -62,6 +62,7 @@
         const Headphones = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>);
         const Download = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>);
         const Flame = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>);
+        const Loader = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`animate-spin ${className}`}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>);
 
         // --- 輔助函式 ---
         const extractKK = (details) => {
@@ -82,41 +83,111 @@
         ];
 
         function App() {
-          // --- 狀態管理 (包含新功能狀態) ---
+          // --- 狀態管理 ---
           const [totalCards, setTotalCards] = useState(() => { try { const saved = localStorage.getItem('anki-totalCards'); return saved ? JSON.parse(saved) : defaultCards; } catch { return defaultCards; } });
           const [queue, setQueue] = useState(() => { try { const saved = localStorage.getItem('anki-queue'); return saved ? JSON.parse(saved) : defaultCards; } catch { return defaultCards; } });
-          const [stats, setStats] = useState(() => { try { const saved = localStorage.getItem('anki-stats'); return saved ? JSON.parse(saved) : { again: 0, hard: 0, good: 0, easy: 0 }; } catch { return { again: 0, hard: 0, good: 0, easy: 0 }; } });
-          const [settings, setSettings] = useState(() => { try { const saved = localStorage.getItem('anki-settings'); return saved ? JSON.parse(saved) : { again: '1', hard: 'middle', good: 'end' }; } catch { return { again: '1', hard: 'middle', good: 'end' }; } });
           
-          // UI 開關狀態
+          // ⏳ 新增狀態：存放因「時間設定」而延遲出現的卡片
+          const [delayedCards, setDelayedCards] = useState(() => { try { const saved = localStorage.getItem('anki-delayedCards'); return saved ? JSON.parse(saved) : []; } catch { return []; } });
+          
+          const [stats, setStats] = useState(() => { try { const saved = localStorage.getItem('anki-stats'); return saved ? JSON.parse(saved) : { again: 0, hard: 0, good: 0, easy: 0 }; } catch { return { again: 0, hard: 0, good: 0, easy: 0 }; } });
+          
+          const [settings, setSettings] = useState(() => { 
+            try { 
+                const saved = localStorage.getItem('anki-settings'); 
+                if (saved) {
+                    let parsed = JSON.parse(saved);
+                    // 舊版遷移相容處理 (自動補上 c_ 或 t_ 前綴)
+                    if (parsed.again && !parsed.again.startsWith('c_') && !parsed.again.startsWith('t_')) parsed.again = 'c_' + parsed.again;
+                    if (parsed.hard && !parsed.hard.startsWith('c_') && !parsed.hard.startsWith('t_')) parsed.hard = 'c_' + parsed.hard;
+                    if (parsed.good && !parsed.good.startsWith('c_') && !parsed.good.startsWith('t_')) parsed.good = 'c_' + parsed.good;
+                    return parsed;
+                }
+                return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '' }; 
+            } catch { return { again: 't_1', hard: 'c_middle', good: 'c_end', unsplashKey: '' }; } 
+          });
+          
           const [isFlipped, setIsFlipped] = useState(false);
           const [isInfoOpen, setIsInfoOpen] = useState(false);
+          const [isLoading, setIsLoading] = useState(false);
           const [showImage, setShowImage] = useState(() => { try { const saved = localStorage.getItem('anki-showImage'); return saved !== null ? JSON.parse(saved) : true; } catch { return true; } });
           const [isDarkMode, setIsDarkMode] = useState(() => { try { const saved = localStorage.getItem('anki-darkMode'); return saved !== null ? JSON.parse(saved) : false; } catch { return false; } });
           const [isBlindMode, setIsBlindMode] = useState(() => { try { const saved = localStorage.getItem('anki-blindMode'); return saved !== null ? JSON.parse(saved) : false; } catch { return false; } });
           const [streak, setStreak] = useState(() => { try { return Number(localStorage.getItem('anki-streak') || 0); } catch { return 0; } });
 
+          const [currentImageUrl, setCurrentImageUrl] = useState('');
+          const [timeNow, setTimeNow] = useState(Date.now());
+
           const fileInputRef = useRef(null);
           const importBackupRef = useRef(null);
+          
+          // 進度計算：剩餘未背的數量 (含佇列中與等待中)
+          const totalRemaining = queue.length + delayedCards.length;
+          const progressPercent = totalCards.length > 0 ? ((totalCards.length - totalRemaining) / totalCards.length) * 100 : 0;
 
-          const progressPercent = totalCards.length > 0 ? ((totalCards.length - queue.length) / totalCards.length) * 100 : 0;
-
-          // 深色模式切換 Effect
+          // 🌙 深色模式 Effect
           useEffect(() => {
             if (isDarkMode) document.documentElement.classList.add('dark');
             else document.documentElement.classList.remove('dark');
             localStorage.setItem('anki-darkMode', JSON.stringify(isDarkMode));
           }, [isDarkMode]);
 
-          // 其他狀態同步
+          // 💾 狀態同步 LocalStorage
           useEffect(() => {
             localStorage.setItem('anki-totalCards', JSON.stringify(totalCards));
             localStorage.setItem('anki-queue', JSON.stringify(queue));
+            localStorage.setItem('anki-delayedCards', JSON.stringify(delayedCards));
             localStorage.setItem('anki-stats', JSON.stringify(stats));
             localStorage.setItem('anki-settings', JSON.stringify(settings));
             localStorage.setItem('anki-showImage', JSON.stringify(showImage));
             localStorage.setItem('anki-blindMode', JSON.stringify(isBlindMode));
-          }, [totalCards, queue, stats, settings, showImage, isBlindMode]);
+          }, [totalCards, queue, delayedCards, stats, settings, showImage, isBlindMode]);
+
+          // ⏳ 背景計時器：檢查是否有延遲時間已到的卡片
+          useEffect(() => {
+            const interval = setInterval(() => {
+                const now = Date.now();
+                setTimeNow(now); // 更新當前時間供等待畫面使用
+                
+                setDelayedCards(prevDelayed => {
+                    if (prevDelayed.length === 0) return prevDelayed;
+                    
+                    const ready = prevDelayed.filter(c => c.availableAt <= now);
+                    if (ready.length === 0) return prevDelayed;
+
+                    const stillDelayed = prevDelayed.filter(c => c.availableAt > now);
+                    // 將時間到的卡片「插隊」回佇列最前方 (保證不蓋掉當下正在背的卡片)
+                    setQueue(prevQueue => {
+                        const strippedReady = ready.map(c => { const {availableAt, ...rest} = c; return rest; });
+                        if (prevQueue.length > 0) return [prevQueue[0], ...strippedReady, ...prevQueue.slice(1)];
+                        return [...strippedReady];
+                    });
+                    
+                    return stillDelayed;
+                });
+            }, 1000);
+            return () => clearInterval(interval);
+          }, []);
+
+          // 🖼️ 動態抓取 Unsplash 圖片邏輯
+          useEffect(() => {
+            if (queue.length > 0 && showImage) {
+                const word = queue[0].word;
+                if (queue[0].image) {
+                    setCurrentImageUrl(queue[0].image);
+                } else if (settings.unsplashKey) {
+                    fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(word)}&per_page=1&client_id=${settings.unsplashKey}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) setCurrentImageUrl(data.results[0].urls.small);
+                        else setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering`);
+                    })
+                    .catch(() => setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering`));
+                } else {
+                    setCurrentImageUrl(`https://loremflickr.com/400/200/${encodeURIComponent(word)},engineering/all`);
+                }
+            }
+          }, [queue[0]?.word, showImage, settings.unsplashKey]);
 
           // 語音載入
           useEffect(() => {
@@ -129,7 +200,7 @@
           // 快捷鍵
           useEffect(() => {
             const handleKeyDown = (e) => {
-              if (isInfoOpen || queue.length === 0) return;
+              if (isInfoOpen || queue.length === 0 || isLoading) return;
               if (e.code === 'Space') {
                 e.preventDefault(); 
                 if (!isFlipped) setIsFlipped(true); 
@@ -144,7 +215,7 @@
             };
             window.addEventListener('keydown', handleKeyDown);
             return () => window.removeEventListener('keydown', handleKeyDown);
-          }, [isFlipped, isInfoOpen, queue.length]);
+          }, [isFlipped, isInfoOpen, queue.length, isLoading]);
 
           const shuffleQueue = () => {
             setQueue(prevQueue => {
@@ -159,7 +230,7 @@
             setIsFlipped(false);
           };
 
-          // --- 語音功能 ---
+          // 語音功能
           const getBestAmericanVoice = () => {
               const voices = window.speechSynthesis.getVoices();
               const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Zira', 'Microsoft David', 'Fred'];
@@ -185,7 +256,6 @@
             }
           };
 
-          // --- 每日打卡 (Streak) 邏輯 ---
           const updateStreak = () => {
             const todayObj = new Date();
             todayObj.setHours(0,0,0,0);
@@ -207,28 +277,70 @@
             setStreak(currentStreak);
           };
 
-          const handleRating = (rating, e) => {
-            if (e && e.stopPropagation) e.stopPropagation();
-            
-            setStats(prev => ({ ...prev, [rating]: prev[rating] + 1 }));
-            updateStreak(); // 記錄打卡
-            
-            const currentCard = queue[0];
-            const remainingCards = queue.slice(1);
-            
-            if (rating !== 'easy') {
-                const settingVal = settings[rating];
-                let insertIndex = 0;
-                if (settingVal === 'middle') insertIndex = Math.ceil(remainingCards.length / 2);
-                else if (settingVal === 'end') insertIndex = remainingCards.length;
-                else insertIndex = Math.min(Number(settingVal), remainingCards.length);
-                remainingCards.splice(insertIndex, 0, currentCard);
-            }
-            setQueue(remainingCards);
-            setIsFlipped(false);
+          // --- 🤖 自動取得字典資料 (Auto-fetch AI) ---
+          const enrichCards = async (parsedCards) => {
+              const enriched = [];
+              for (let card of parsedCards) {
+                  if (!card.details) {
+                      try {
+                          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(card.word)}`);
+                          if (res.ok) {
+                              const data = await res.json();
+                              const entry = data[0];
+                              const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
+                              const meaning = entry.meanings[0];
+                              const pos = meaning?.partOfSpeech || '';
+                              const def = meaning?.definitions[0]?.definition || '';
+                              const ex = meaning?.definitions[0]?.example || '';
+
+                              let translatedDef = def;
+                              try {
+                                  const transRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(def)}&langpair=en|zh-TW`);
+                                  const transData = await transRes.json();
+                                  if (transData.responseData?.translatedText) translatedDef = transData.responseData.translatedText;
+                              } catch(e) {}
+
+                              let newDetails = `${card.word} (${pos}) ${translatedDef}\n`;
+                              if (phonetic) newDetails += `KK 音標：[${phonetic.replace(/\//g, '')}]\n`;
+                              if (ex) newDetails += `[例句] ${ex}\n`;
+
+                              card.details = newDetails;
+                          } else {
+                              card.details = `${card.word} (n/v) \n[系統提示] 字典找不到此單字資訊`;
+                          }
+                      } catch(e) {
+                           card.details = `${card.word}\n[系統提示] 網路連線錯誤`;
+                      }
+                  }
+                  enriched.push(card);
+              }
+              return enriched;
           };
 
-          // --- 檔案處理 ---
+          const handleFileUpload = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              setIsLoading(true); 
+              const text = e.target.result.replace(/\r/g, ''); 
+              let parsedCards = parseCSV(text);
+              if (parsedCards.length > 0) {
+                parsedCards = await enrichCards(parsedCards); 
+                setTotalCards(parsedCards); 
+                setQueue([...parsedCards]); 
+                setDelayedCards([]); // 清空等待陣列
+                setStats({ again: 0, hard: 0, good: 0, easy: 0 }); 
+                setIsFlipped(false);
+              } else {
+                alert("無法解析 CSV 檔案。");
+              }
+              setIsLoading(false);
+            };
+            reader.readAsText(file);
+            event.target.value = null;
+          };
+
           const parseCSV = (text) => {
             const result = [];
             let currentWord = '', currentDetails = '', currentImage = '', inQuotes = false, colIndex = 0;
@@ -249,24 +361,54 @@
             return result;
           };
 
-          const handleFileUpload = (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const text = e.target.result.replace(/\r/g, ''); 
-              const parsedCards = parseCSV(text);
-              if (parsedCards.length > 0) {
-                setTotalCards(parsedCards); setQueue([...parsedCards]); setStats({ again: 0, hard: 0, good: 0, easy: 0 }); setIsFlipped(false);
-              } else alert("無法解析 CSV 檔案。");
-            };
-            reader.readAsText(file);
-            event.target.value = null;
+          // --- 🧠 進階評分邏輯 (支援 時間延遲 與 張數) ---
+          const handleRating = (rating, e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            
+            setStats(prev => ({ ...prev, [rating]: prev[rating] + 1 }));
+            updateStreak(); 
+            
+            const currentCard = queue[0];
+            const remainingCards = queue.slice(1);
+            
+            if (rating !== 'easy') {
+                const settingVal = settings[rating];
+                
+                if (settingVal.startsWith('t_')) {
+                    // 時間模式 (延遲)
+                    const mins = parseInt(settingVal.replace('t_', ''), 10);
+                    const delayedCard = { ...currentCard, availableAt: Date.now() + mins * 60000 };
+                    setDelayedCards(prev => [...prev, delayedCard]);
+                    setQueue(remainingCards);
+                } else {
+                    // 張數模式 (插隊)
+                    let cVal = settingVal.replace('c_', '');
+                    let insertIndex = 0;
+                    if (cVal === 'middle') insertIndex = Math.ceil(remainingCards.length / 2);
+                    else if (cVal === 'end') insertIndex = remainingCards.length;
+                    else insertIndex = Math.min(Number(cVal), remainingCards.length);
+                    
+                    remainingCards.splice(insertIndex, 0, currentCard);
+                    setQueue(remainingCards);
+                }
+            } else {
+                setQueue(remainingCards);
+            }
+            setIsFlipped(false);
           };
 
-          // --- 進度備份與還原 ---
+          // 翻譯底部分數按鈕的小字
+          const getInsertText = (val) => {
+              if (!val) return '';
+              if (val.startsWith('t_')) return `${val.replace('t_', '')} 分後`;
+              const cVal = val.replace('c_', '');
+              if (cVal === 'middle') return '正中間';
+              if (cVal === 'end') return '最後面';
+              return `下 ${cVal} 張`;
+          };
+
           const exportBackup = () => {
-              const data = { totalCards, queue, stats, settings, isDarkMode, showImage, isBlindMode, streak };
+              const data = { totalCards, queue, delayedCards, stats, settings, isDarkMode, showImage, isBlindMode, streak };
               const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -284,6 +426,7 @@
                       const data = JSON.parse(e.target.result);
                       if(data.totalCards) setTotalCards(data.totalCards);
                       if(data.queue) setQueue(data.queue);
+                      if(data.delayedCards) setDelayedCards(data.delayedCards); else setDelayedCards([]);
                       if(data.stats) setStats(data.stats);
                       if(data.settings) setSettings(data.settings);
                       alert("進度還原成功！");
@@ -298,6 +441,7 @@
 
           const currentCard = queue[0];
 
+          // 渲染背面
           const renderBackContent = (rawText, word) => {
             if (!rawText) return <p className="text-slate-500 dark:text-slate-400">無詳細資料</p>;
             const lines = rawText.split(/\\n|\n/).map(l => l.trim()).filter(Boolean);
@@ -348,6 +492,28 @@
             });
           };
 
+          // 共同下拉選單組件
+          const SettingOptions = () => (
+            <>
+                <optgroup label="🕒 時間間隔">
+                    <option value="t_1">1 分鐘後</option>
+                    <option value="t_3">3 分鐘後</option>
+                    <option value="t_5">5 分鐘後</option>
+                    <option value="t_10">10 分鐘後</option>
+                    <option value="t_30">30 分鐘後</option>
+                </optgroup>
+                <optgroup label="🗂️ 卡片張數">
+                    <option value="c_1">1 張後</option>
+                    <option value="c_2">2 張後</option>
+                    <option value="c_3">3 張後</option>
+                    <option value="c_5">5 張後</option>
+                    <option value="c_10">10 張後</option>
+                    <option value="c_middle">正中間</option>
+                    <option value="c_end">最後面</option>
+                </optgroup>
+            </>
+          );
+
           // 設定 Modal
           const InfoModal = () => (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto" onClick={() => setIsInfoOpen(false)}>
@@ -360,55 +526,62 @@
                 </h3>
                 
                 <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300">
-                  
-                  {/* 資料備份區塊 */}
-                  <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
-                    <p className="font-bold text-emerald-800 dark:text-emerald-400 mb-3 border-b border-emerald-200 dark:border-emerald-800 pb-1.5 flex items-center">
-                      💾 進度備份與還原
-                    </p>
-                    <div className="flex space-x-3">
-                        <button onClick={exportBackup} className="flex-1 flex items-center justify-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold shadow-sm transition-colors">
-                            <Download className="w-4 h-4" /> <span>匯出備份 (.json)</span>
-                        </button>
-                        <input type="file" accept=".json" ref={importBackupRef} onChange={importBackup} className="hidden" />
-                        <button onClick={() => importBackupRef.current.click()} className="flex-1 flex items-center justify-center space-x-1 bg-emerald-100 dark:bg-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 py-2 rounded-lg font-bold shadow-sm transition-colors">
-                            <Upload className="w-4 h-4" /> <span>還原進度</span>
-                        </button>
-                    </div>
-                  </div>
 
+                  {/* 複習間隔設定區塊 (加入時間與張數選項) */}
                   <div className="bg-slate-50 dark:bg-slate-700/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-600">
-                    <p className="font-bold text-slate-800 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-600 pb-1.5">⚙️ 複習間隔設定</p>
+                    <p className="font-bold text-slate-800 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-600 pb-1.5 flex items-center">
+                      ⚙️ 複習間隔設定 (插入位置)
+                    </p>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-red-500">Again:</span>
                         <select value={settings.again} onChange={(e) => setSettings({...settings, again: e.target.value})} className="bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded px-2 py-1 outline-none text-xs sm:text-sm font-medium">
-                          <option value="1">1 張後</option><option value="3">3 張後</option><option value="middle">正中間</option><option value="end">最後</option>
+                          <SettingOptions />
                         </select>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-orange-500">Hard:</span>
                         <select value={settings.hard} onChange={(e) => setSettings({...settings, hard: e.target.value})} className="bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded px-2 py-1 outline-none text-xs sm:text-sm font-medium">
-                          <option value="3">3 張後</option><option value="5">5 張後</option><option value="middle">正中間</option><option value="end">最後</option>
+                          <SettingOptions />
                         </select>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-blue-500">Good:</span>
                         <select value={settings.good} onChange={(e) => setSettings({...settings, good: e.target.value})} className="bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded px-2 py-1 outline-none text-xs sm:text-sm font-medium">
-                          <option value="middle">正中間</option><option value="10">10 張後</option><option value="end">最後</option>
+                          <SettingOptions />
                         </select>
                       </div>
                     </div>
                   </div>
 
-                  <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                    <p className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 border-b border-indigo-200 dark:border-indigo-700 pb-1">快捷鍵：</p>
-                    <ul className="space-y-1.5 text-xs sm:text-sm">
-                      <li><kbd className="bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-sm px-1.5 py-0.5 rounded font-mono mr-1 text-indigo-600 dark:text-indigo-400">Space</kbd> 翻開卡片</li>
-                      <li><kbd className="bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-sm px-1.5 py-0.5 rounded font-mono mr-1 text-slate-700 dark:text-slate-300">R</kbd> 隨機打亂</li>
-                      <li><kbd className="bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-sm px-1.5 py-0.5 rounded font-mono mr-1">1</kbd>~<kbd className="bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-sm px-1.5 py-0.5 rounded font-mono mx-1">4</kbd> 進行評分</li>
-                    </ul>
+                  {/* Unsplash API 設定區塊 */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3.5 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                    <p className="font-bold text-blue-800 dark:text-blue-400 mb-2 border-b border-blue-200 dark:border-blue-800 pb-1.5">
+                      🖼️ 高畫質圖庫 (Unsplash)
+                    </p>
+                    <p className="text-xs mb-2 text-blue-700 dark:text-blue-300">
+                      自動抓取高質感科技配圖，請填寫免費的 <a href="https://unsplash.com/developers" target="_blank" className="underline font-bold">Unsplash Access Key</a>：
+                    </p>
+                    <input 
+                      type="text" 
+                      placeholder="例如：d_kYxGk..." 
+                      value={settings.unsplashKey || ''}
+                      onChange={(e) => setSettings({...settings, unsplashKey: e.target.value})}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-500 rounded px-3 py-2 outline-none focus:border-indigo-500 text-xs shadow-sm"
+                    />
                   </div>
+
+                  {/* 備份還原 */}
+                  <div className="flex space-x-3">
+                      <button onClick={exportBackup} className="flex-1 flex items-center justify-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold shadow-sm transition-colors text-xs sm:text-sm">
+                          <Download className="w-4 h-4" /> <span>匯出進度</span>
+                      </button>
+                      <input type="file" accept=".json" ref={importBackupRef} onChange={importBackup} className="hidden" />
+                      <button onClick={() => importBackupRef.current.click()} className="flex-1 flex items-center justify-center space-x-1 bg-emerald-100 dark:bg-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 py-2 rounded-lg font-bold shadow-sm transition-colors text-xs sm:text-sm">
+                          <Upload className="w-4 h-4" /> <span>還原進度</span>
+                      </button>
+                  </div>
+                  
                 </div>
                 <button onClick={() => setIsInfoOpen(false)} className="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-colors">
                   完成設定
@@ -417,9 +590,39 @@
             </div>
           );
 
-          if (queue.length === 0) {
+          // ⏳ 若所有卡片都在倒數冷卻中，顯示等待畫面
+          if (queue.length === 0 && delayedCards.length > 0) {
+            const nextCardTime = Math.min(...delayedCards.map(c => c.availableAt));
+            const diffSecs = Math.max(0, Math.floor((nextCardTime - timeNow) / 1000));
+            const mins = Math.floor(diffSecs / 60);
+            const secs = diffSecs % 60;
+
             return (
-              <div className="min-h-screen flex flex-col items-center justify-center p-4">
+              <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-900 transition-colors">
+                <div className="bg-white dark:bg-slate-800 p-10 rounded-3xl shadow-xl max-w-md w-full text-center">
+                  <div className="text-6xl mb-6 animate-pulse">⏳</div>
+                  <h2 className="text-2xl font-black mb-2 dark:text-white">間隔記憶冷卻中</h2>
+                  <p className="text-slate-500 dark:text-slate-400 mb-6">下一張卡片將在以下時間後出現</p>
+                  <div className="text-5xl font-mono font-black text-indigo-600 dark:text-indigo-400 mb-8 tracking-wider">
+                      {mins.toString().padStart(2, '0')}:{secs.toString().padStart(2, '0')}
+                  </div>
+                  <p className="text-xs text-slate-400 mb-6">尚有 {delayedCards.length} 張卡片排隊中...</p>
+                  <button onClick={() => {
+                      // 提早複習機制
+                      setQueue(delayedCards.map(c => { const {availableAt, ...rest} = c; return rest; }));
+                      setDelayedCards([]);
+                  }} className="w-full flex justify-center items-center bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 px-6 py-4 rounded-xl transition-colors font-bold text-sm">
+                      略過等待，強制現在複習
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // ✅ 練習完成畫面
+          if (queue.length === 0 && delayedCards.length === 0) {
+            return (
+              <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-900 transition-colors">
                 <div className="bg-white dark:bg-slate-800 p-10 rounded-3xl shadow-xl max-w-md w-full text-center">
                   <CheckCircle className="w-20 h-20 text-emerald-500 mx-auto mb-6" />
                   <h2 className="text-3xl font-black mb-4 dark:text-white">練習完成！</h2>
@@ -429,7 +632,7 @@
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-900/50"><span className="text-blue-500 font-bold text-sm block">Good</span><span className="text-xl font-black dark:text-blue-100">{stats.good}</span></div>
                     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded-xl border border-emerald-100 dark:border-emerald-900/50"><span className="text-emerald-500 font-bold text-sm block">Easy</span><span className="text-xl font-black dark:text-emerald-100">{stats.easy}</span></div>
                   </div>
-                  <button onClick={() => { setQueue([...totalCards]); setStats({ again: 0, hard: 0, good: 0, easy: 0 }); setIsFlipped(false); }} className="w-full flex justify-center items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-4 rounded-xl transition-colors font-bold text-lg">
+                  <button onClick={() => { setQueue([...totalCards]); setDelayedCards([]); setStats({ again: 0, hard: 0, good: 0, easy: 0 }); setIsFlipped(false); }} className="w-full flex justify-center items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-4 rounded-xl transition-colors font-bold text-lg">
                     <RefreshCw className="w-5 h-5" /> <span>重新開始練習</span>
                   </button>
                 </div>
@@ -437,8 +640,18 @@
             );
           }
 
+          // 主畫面
           return (
             <div className="min-h-screen flex flex-col">
+              {/* 若載入字典資料中，顯示遮罩 */}
+              {isLoading && (
+                  <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                      <Loader className="w-12 h-12 mb-4 text-indigo-400" />
+                      <p className="font-bold text-lg">自動獲取字典翻譯與例句中...</p>
+                      <p className="text-sm opacity-80 mt-1">這將省去您手動建檔的時間</p>
+                  </div>
+              )}
+
               {isInfoOpen && <InfoModal />}
 
               {/* Header */}
@@ -461,7 +674,9 @@
                         <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
                       </div>
                       <span className="text-slate-700 dark:text-slate-200 font-mono">
-                        <span className="text-indigo-600 dark:text-indigo-400">{queue.length}</span> / {totalCards.length}
+                        <span className="text-indigo-600 dark:text-indigo-400">{queue.length}</span>
+                        {delayedCards.length > 0 && <span className="text-slate-400 text-xs ml-1" title="等待冷卻的卡片">(+ {delayedCards.length} ⏳)</span>}
+                        <span className="mx-1">/</span> {totalCards.length}
                       </span>
                     </div>
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 shrink-0"></div>
@@ -472,18 +687,15 @@
                   </div>
                   
                   <div className="flex items-center space-x-2 shrink-0">
-                    {/* 盲測模式開關 */}
                     <button onClick={() => setIsBlindMode(!isBlindMode)} className={`flex items-center justify-center p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors shadow-sm ${isBlindMode ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`} title="聽力盲測模式">
                       <Headphones className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:block text-xs sm:text-sm font-semibold">{isBlindMode ? '盲測開' : '盲測關'}</span>
                     </button>
                     
-                    {/* 深淺色開關 */}
                     <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 sm:py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-yellow-400 shadow-sm">
                       {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                     </button>
 
-                    <button onClick={shuffleQueue} className="hidden sm:flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-xl shadow-sm text-sm font-semibold"><ShuffleIcon className="w-4 h-4 mr-1" />隨機</button>
                     <button onClick={() => setIsInfoOpen(true)} className="flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-2 sm:px-3 sm:py-1.5 rounded-xl shadow-sm text-xs sm:text-sm font-semibold"><Info className="w-4 h-4 sm:mr-1" /><span className="hidden sm:block">設定</span></button>
                     
                     <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
@@ -504,7 +716,6 @@
                         </div>
                       </div>
 
-                      {/* 盲測模式：單字模糊處理 */}
                       <h2 className={`text-5xl sm:text-6xl font-black text-slate-800 dark:text-white break-words drop-shadow-sm px-2 transition-all duration-300 ${isBlindMode ? 'blur-md select-none text-slate-300 dark:text-slate-600' : ''}`}>
                         {isBlindMode ? "🎧 聽發音" : currentCard.word}
                       </h2>
@@ -524,7 +735,7 @@
                     {/* 背面 */}
                     <div className="absolute w-full h-full bg-white dark:bg-slate-800 rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgb(0,0,0,0.3)] border border-slate-200 dark:border-slate-700 p-5 sm:p-6 flex flex-col overflow-hidden backface-hidden" style={{ transform: 'rotateY(180deg)' }}>
                       {showImage && (
-                        <img src={currentCard.image || `https://loremflickr.com/400/200/${encodeURIComponent(currentCard.word)},engineering/all`} alt={currentCard.word} onError={(e) => { e.target.style.display = 'none'; }} className="w-full h-28 sm:h-32 object-cover rounded-2xl shrink-0 mb-4 bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600" />
+                        <img src={currentImageUrl} alt={currentCard.word} onError={(e) => { e.target.style.display = 'none'; }} className="w-full h-28 sm:h-32 object-cover rounded-2xl shrink-0 mb-4 bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600" />
                       )}
                       <div className="text-left w-full flex-1 flex flex-col justify-start overflow-y-auto custom-scrollbar pr-2">
                         {renderBackContent(currentCard.details, currentCard.word)}
@@ -534,13 +745,25 @@
                   </div>
                 </div>
 
-                {/* 底部按鈕 */}
+                {/* 底部動態按鈕 (附帶間隔時間提示) */}
                 <div className={`w-full max-w-md mx-auto transition-all duration-300 mt-5 sm:mt-6 ${isFlipped ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
                   <div className="grid grid-cols-4 gap-2 w-full">
-                    <button onClick={(e) => handleRating('again', e)} className="py-3 sm:py-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 active:scale-95 shadow-sm font-black text-sm sm:text-base">Again</button>
-                    <button onClick={(e) => handleRating('hard', e)} className="py-3 sm:py-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-orange-100 dark:border-orange-900/50 text-orange-600 dark:text-orange-400 active:scale-95 shadow-sm font-black text-sm sm:text-base">Hard</button>
-                    <button onClick={(e) => handleRating('good', e)} className="py-3 sm:py-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 active:scale-95 shadow-sm font-black text-sm sm:text-base">Good</button>
-                    <button onClick={(e) => handleRating('easy', e)} className="py-3 sm:py-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-emerald-100 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 active:scale-95 shadow-sm font-black text-sm sm:text-base">Easy</button>
+                    <button onClick={(e) => handleRating('again', e)} className="flex flex-col items-center justify-center py-2 sm:py-3 rounded-2xl bg-white dark:bg-slate-800 border-2 border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 active:scale-95 shadow-sm transition-all group">
+                      <span className="font-black text-sm sm:text-base">Again</span>
+                      <span className="text-[10px] font-medium opacity-60 mt-0.5 group-hover:opacity-100">{getInsertText(settings.again)}</span>
+                    </button>
+                    <button onClick={(e) => handleRating('hard', e)} className="flex flex-col items-center justify-center py-2 sm:py-3 rounded-2xl bg-white dark:bg-slate-800 border-2 border-orange-100 dark:border-orange-900/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 active:scale-95 shadow-sm transition-all group">
+                      <span className="font-black text-sm sm:text-base">Hard</span>
+                      <span className="text-[10px] font-medium opacity-60 mt-0.5 group-hover:opacity-100">{getInsertText(settings.hard)}</span>
+                    </button>
+                    <button onClick={(e) => handleRating('good', e)} className="flex flex-col items-center justify-center py-2 sm:py-3 rounded-2xl bg-white dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-95 shadow-sm transition-all group">
+                      <span className="font-black text-sm sm:text-base">Good</span>
+                      <span className="text-[10px] font-medium opacity-60 mt-0.5 group-hover:opacity-100">{getInsertText(settings.good)}</span>
+                    </button>
+                    <button onClick={(e) => handleRating('easy', e)} className="flex flex-col items-center justify-center py-2 sm:py-3 rounded-2xl bg-white dark:bg-slate-800 border-2 border-emerald-100 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 active:scale-95 shadow-sm transition-all group">
+                      <span className="font-black text-sm sm:text-base">Easy</span>
+                      <span className="text-[10px] font-medium opacity-60 mt-0.5 group-hover:opacity-100">移除</span>
+                    </button>
                   </div>
                 </div>
               </main>
