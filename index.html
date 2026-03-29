@@ -54,6 +54,7 @@
         const Info = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>);
         const X = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>);
         const ImageIcon = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>);
+        const ShuffleIcon = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>);
 
         // --- 提取 KK 音標的輔助函式 ---
         const extractKK = (details) => {
@@ -124,6 +125,21 @@
             localStorage.setItem('anki-showImage', JSON.stringify(showImage));
           }, [totalCards, queue, stats, settings, showImage]);
 
+          // --- 隨機洗牌功能 (不會影響已完成的統計數據，只打亂剩下的卡片) ---
+          const shuffleQueue = () => {
+            setQueue(prevQueue => {
+                if (prevQueue.length <= 1) return prevQueue;
+                const array = [...prevQueue];
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            });
+            setIsFlipped(false);
+          };
+
+          // 鍵盤監聽
           useEffect(() => {
             const handleKeyDown = (e) => {
               if (isInfoOpen || queue.length === 0) return;
@@ -131,6 +147,8 @@
               if (e.code === 'Space') {
                 e.preventDefault(); 
                 if (!isFlipped) setIsFlipped(true); 
+              } else if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
+                shuffleQueue(); // 按 R 鍵隨機洗牌
               } else if (isFlipped) {
                 if (e.key === '1') handleRating('again');
                 if (e.key === '2') handleRating('hard');
@@ -180,7 +198,8 @@
             if (e && e.stopPropagation) e.stopPropagation();
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
-              const englishText = text.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
+              let englishText = text.replace(/\([a-zA-Z/]+\)/g, ' ');
+              englishText = englishText.replace(/[\u4e00-\u9fa5、，。！；「」：]/g, ' ').trim();
               const utterance = new SpeechSynthesisUtterance(englishText);
               utterance.lang = 'en-US';
               utterance.rate = 0.9; 
@@ -249,7 +268,6 @@
             return result;
           };
 
-          // 動態依照使用者設定來計算插入位置
           const handleRating = (rating, e) => {
             if (e && e.stopPropagation) e.stopPropagation();
             
@@ -367,8 +385,6 @@
                 </h3>
                 
                 <div className="space-y-4 text-sm text-slate-600">
-                  
-                  {/* --- 複習間隔設定區塊 --- */}
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <p className="font-bold text-slate-800 mb-3 border-b border-slate-200 pb-1.5 flex items-center">
                       ⚙️ 複習間隔設定 (插入位置)
@@ -429,6 +445,7 @@
                     <p className="font-bold text-indigo-800 mb-2 border-b border-indigo-200 pb-1">滑鼠操作與快捷鍵：</p>
                     <ul className="space-y-2">
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 font-bold text-indigo-600">Space</kbd> 翻開卡片背面</li>
+                      <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 font-bold text-slate-700">R</kbd> <span className="font-medium text-slate-700">隨機打亂剩餘卡片</span></li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-red-600">1</kbd> 評分：Again</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-orange-600">2</kbd> 評分：Hard</li>
                       <li className="flex items-center"><kbd className="bg-white border shadow-sm px-2 py-0.5 rounded text-xs font-mono mr-2 text-blue-600">3</kbd> 評分：Good</li>
@@ -502,6 +519,10 @@
                   </div>
                   
                   <div className="flex items-center space-x-2 shrink-0">
+                    <button onClick={shuffleQueue} className="flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors text-xs sm:text-sm font-semibold shadow-sm" title="隨機打亂剩餘卡片 (快速鍵: R)">
+                      <ShuffleIcon className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:block">隨機</span>
+                    </button>
                     <button onClick={() => setShowImage(!showImage)} className={`flex items-center justify-center p-2 sm:px-3 sm:py-1.5 rounded-xl transition-colors text-xs sm:text-sm font-semibold shadow-sm ${showImage ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-500'}`} title="切換圖片顯示">
                       <ImageIcon className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:block">{showImage ? '圖片開' : '圖片關'}</span>
